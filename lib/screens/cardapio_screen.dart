@@ -127,7 +127,7 @@ class _CardProduto extends StatelessWidget {
                   return const Center(child: CircularProgressIndicator());
                 },
                 // Caso a URL falhe, mostra um ícone genérico.
-                errorBuilder: (_, __, ___) =>
+                errorBuilder: (_, _, _) =>
                     const Icon(Icons.broken_image, size: 48),
               ),
             ),

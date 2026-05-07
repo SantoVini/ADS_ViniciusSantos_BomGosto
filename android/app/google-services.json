@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "172461862295",
+    "project_id": "bom-gosto-3588e",
+    "storage_bucket": "bom-gosto-3588e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:172461862295:android:fd2a98147840ac1e66a8d2",
+        "android_client_info": {
+          "package_name": "com.example.bom_gosto"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDdWYn4ytKNCZLYBoEdlYSFUNXKbrii5V0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
