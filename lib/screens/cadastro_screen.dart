@@ -1,129 +1,180 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // CRUCIAL: Resolve o erro do FieldValue
+import 'cardapio_screen.dart';
 
 class CadastroScreen extends StatefulWidget {
   const CadastroScreen({super.key});
 
   @override
-  _CadastroScreenState createState() => _CadastroScreenState();
+  State<CadastroScreen> createState() => _CadastroScreenState();
 }
 
 class _CadastroScreenState extends State<CadastroScreen> {
+  // CORREÇÃO: Declarando explicitamente as instâncias para resolver os erros de Getters não definidos
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
   final _formKey = GlobalKey<FormState>();
-  
-  // Controladores para capturar os dados conforme o DVP
-  final _nomeController = TextEditingController();
-  final _enderecoController = TextEditingController();
-  final _telefoneController = TextEditingController();
-  final _emailController = TextEditingController();
-  final _senhaController = TextEditingController();
 
-  // Função que verifica o e-mail e realiza o cadastro
+  // Controladores dos campos solicitados pelo DVP (HU01 e HU08)
+  final TextEditingController _nomeController = TextEditingController();
+  final TextEditingController _telefoneController = TextEditingController();
+  final TextEditingController _enderecoController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _senhaController = TextEditingController();
+
+  bool _carregando = false;
+
   Future<void> _processarCadastro() async {
-    if (_formKey.currentState!.validate()) {
-      try {
-        // 1. Verifica se o e-mail já existe (Regra HU01 do DVP)
-        final metodos = await FirebaseAuth.instance
-            .fetchSignInMethodsForEmail(_emailController.text.trim());
+    if (!_formKey.currentState!.validate()) return;
 
-        if (metodos.isNotEmpty) {
-          _mostrarMensagem("Este e-mail já está em uso por outra conta.");
-          return;
-        }
+    setState(() {
+      _carregando = true;
+    });
 
-        // 2. Tenta criar o usuário no Firebase Auth
-        await FirebaseAuth.instance.createUserWithEmailAndPassword(
-          email: _emailController.text.trim(),
-          password: _senhaController.text.trim(),
+    try {
+      // 1. Cria o usuário no Firebase Authentication (RF01)
+      UserCredential userCredential = await _auth
+          .createUserWithEmailAndPassword(
+            email: _emailController.text.trim(),
+            password: _senhaController.text.trim(),
+          );
+
+      String? uid = userCredential.user?.uid;
+
+      if (uid != null) {
+        // 2. CORREÇÃO: Salva os dados complementares no Firestore associados ao UID
+        await _firestore.collection('usuarios').doc(uid).set({
+          'uid': uid,
+          'nome': _nomeController.text.trim(),
+          'telefone': _telefoneController.text.trim(),
+          'endereco': _enderecoController.text
+              .trim(), // Necessário para o Delivery (HU08)
+          'email': _emailController.text.trim(),
+          'criadoEm':
+              FieldValue.serverTimestamp(), // Agora reconhecido com o import correto
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cadastro realizado com sucesso! 🎉')),
         );
 
-        _mostrarMensagem("Cadastro realizado com sucesso!");
-        
-        // Após sucesso, retorna para a tela de login
-        Navigator.pop(context); 
-
-      } on FirebaseAuthException catch (e) {
-        if (e.code == 'email-already-in-use') {
-          _mostrarMensagem("Erro: O e-mail já está cadastrado.");
-        } else {
-          _mostrarMensagem("Erro ao cadastrar: ${e.message}");
-        }
-      } catch (e) {
-        _mostrarMensagem("Ocorreu um erro inesperado.");
+        // 3. CORREÇÃO: Removido o 'const' para corrigir o erro 'Not a constant expression'
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const CardapioScreen()),
+        );
       }
+    } on FirebaseAuthException catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro na autenticação: ${e.message}')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao salvar dados no banco: $e')),
+      );
+    } finally {
+      setState(() {
+        _carregando = false;
+      });
     }
-  }
-
-  void _mostrarMensagem(String texto) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(texto)));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Cadastro - Bom Gosto")),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(16.0),
+      appBar: AppBar(title: const Text('CRIAR CONTA'), centerTitle: true),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
         child: Form(
           key: _formKey,
-          child: Column(
+          child: ListView(
             children: [
-              // Campo Nome (RF01)
               TextFormField(
                 controller: _nomeController,
-                decoration: InputDecoration(labelText: "Nome Completo", border: OutlineInputBorder()),
-                validator: (value) => value!.isEmpty ? "Informe seu nome" : null,
+                decoration: const InputDecoration(
+                  labelText: 'Nome Completo',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) => value!.isEmpty ? 'Insira seu nome' : null,
               ),
-              SizedBox(height: 15),
-              
-              // Campo Endereço (HU08)
-              TextFormField(
-                controller: _enderecoController,
-                decoration: InputDecoration(labelText: "Endereço de Entrega", border: OutlineInputBorder()),
-                validator: (value) => value!.isEmpty ? "Informe seu endereço" : null,
-              ),
-              SizedBox(height: 15),
-
-              // Campo Telefone (RF01 / HU04)
+              const SizedBox(height: 12),
               TextFormField(
                 controller: _telefoneController,
-                decoration: InputDecoration(labelText: "Telefone", border: OutlineInputBorder()),
                 keyboardType: TextInputType.phone,
-                validator: (value) => value!.isEmpty ? "Informe seu telefone" : null,
+                decoration: const InputDecoration(
+                  labelText: 'Telefone',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) =>
+                    value!.isEmpty ? 'Insira seu telefone' : null,
               ),
-              SizedBox(height: 15),
-
-              // Campo E-mail (RF01)
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _enderecoController,
+                decoration: const InputDecoration(
+                  labelText: 'Endereço de Entrega',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) =>
+                    value!.isEmpty ? 'Insira seu endereço' : null,
+              ),
+              const SizedBox(height: 12),
               TextFormField(
                 controller: _emailController,
-                decoration: InputDecoration(labelText: "E-mail", border: OutlineInputBorder()),
                 keyboardType: TextInputType.emailAddress,
-                validator: (value) => value!.isEmpty || !value.contains("@") ? "E-mail inválido" : null,
+                decoration: const InputDecoration(
+                  labelText: 'E-mail',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) =>
+                    value!.isEmpty ? 'Insira seu e-mail' : null,
               ),
-              SizedBox(height: 15),
-
-              // Campo Senha (RF01)
+              const SizedBox(height: 12),
               TextFormField(
                 controller: _senhaController,
-                decoration: InputDecoration(labelText: "Senha", border: OutlineInputBorder()),
                 obscureText: true,
-                validator: (value) => value!.length < 6 ? "A senha deve ter no mínimo 6 caracteres" : null,
+                decoration: const InputDecoration(
+                  labelText: 'Senha',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) => value!.length < 6
+                    ? 'A senha deve ter pelo menos 6 caracteres'
+                    : null,
               ),
-              SizedBox(height: 30),
-
+              const SizedBox(height: 24),
               ElevatedButton(
-                onPressed: _processarCadastro,
                 style: ElevatedButton.styleFrom(
-                  minimumSize: Size(double.infinity, 50),
-                  backgroundColor: Colors.redAccent,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  backgroundColor: Colors.amber[700],
                   foregroundColor: Colors.white,
                 ),
-                child: Text("Finalizar Cadastro"),
+                onPressed: _carregando ? null : _processarCadastro,
+                child: _carregando
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text(
+                        'FINALIZAR CADASTRO',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
               ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _nomeController.dispose();
+    _telefoneController.dispose();
+    _enderecoController.dispose();
+    _emailController.dispose();
+    _senhaController.dispose();
+    super.dispose();
   }
 }
