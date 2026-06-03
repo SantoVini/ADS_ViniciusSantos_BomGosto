@@ -1,223 +1,122 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'pagamento_screen.dart';
+import 'pagamento_screen.dart'; // Preparado para o seu próximo passo do Asaas
 
-class CarrinhoScreen extends StatefulWidget {
-  const CarrinhoScreen({super.key});
+class CarrinhoScreen extends StatelessWidget {
+  CarrinhoScreen({Key? key}) : super(key: key); // Construtor com Key corrigido!
 
-  @override
-  State<CarrinhoScreen> createState() => _CarrinhoScreenState();
-}
-
-class _CarrinhoScreenState extends State<CarrinhoScreen> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-
-  // Atualiza a quantidade do item no Firestore de forma síncrona/reativa
-  Future<void> _atualizarQuantidade(String itemId, int novaQuantidade) async {
-    final uid = _auth.currentUser?.uid;
-    if (uid == null) return;
-
-    final docRef = _firestore
-        .collection('usuarios')
-        .doc(uid)
-        .collection('carrinho')
-        .doc(itemId);
-
-    if (novaQuantidade <= 0) {
-      // Se a quantidade for a zero ou menor, remove o item (HU02)
-      await docRef.delete();
-    } else {
-      // Caso contrário, atualiza o número no banco de dados
-      await docRef.update({'quantidade': novaQuantidade});
-    }
-  }
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   @override
   Widget build(BuildContext context) {
-    final uid = _auth.currentUser?.uid;
-
-    if (uid == null) {
-      return const Scaffold(
-        body: Center(
-          child: Text('Por favor, faça login para ver seu carrinho.'),
-        ),
-      );
-    }
+    final String? uid = _auth.currentUser?.uid;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('MEU CARRINHO'), centerTitle: true),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _firestore
-            .collection('usuarios')
-            .doc(uid)
-            .collection('carrinho')
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return const Center(child: Text('Erro ao carregar o carrinho.'));
-          }
+      appBar: AppBar(
+        title: const Text('Meu Carrinho'),
+        centerTitle: true,
+      ),
+      body: uid == null
+          ? const Center(child: Text('Por favor, faça login para ver seu carrinho.'))
+          : StreamBuilder<QuerySnapshot>(
+              stream: _firestore
+                  .collection('usuarios')
+                  .doc(uid)
+                  .collection('carrinho')
+                  .orderBy('adicionadoEm', descending: false) // Organiza por ordem de adição
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const Center(child: Text('Seu carrinho está vazio.'));
+                }
 
-          final docs = snapshot.data?.docs ?? [];
+                final itensCarrinho = snapshot.data!.docs;
+                double totalCarrinho = 0.0;
 
-          if (docs.isEmpty) {
-            return const Center(
-              child: Text(
-                'Seu carrinho está vazio 🛒',
-                style: TextStyle(fontSize: 16, color: Colors.grey),
-              ),
-            );
-          }
+                // Calcula o valor total dinamicamente em tempo real (RF02 / HU02)
+                for (var doc in itensCarrinho) {
+                  final dados = doc.data() as Map<String, dynamic>;
+                  final double preco = (dados['preco'] ?? 0.0).toDouble();
+                  final int quantidade = (dados['quantidade'] ?? 1).toInt();
+                  totalCarrinho += preco * quantidade;
+                }
 
-          // Processamento do cálculo do total geral em tempo real (HU02)
-          double totalGeral = 0.0;
-          for (var doc in docs) {
-            final data = doc.data() as Map<String, dynamic>;
-            final double preco = (data['preco'] ?? 0.0).toDouble();
-            final int quantidade = (data['quantidade'] ?? 1).toInt();
-            totalGeral += preco * quantidade;
-          }
+                return Column(
+                  children: [
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: itensCarrinho.length,
+                        itemBuilder: (context, index) {
+                          final doc = itensCarrinho[index];
+                          final item = doc.data() as Map<String, dynamic>;
 
-          return Column(
-            children: [
-              Expanded(
-                child: ListView.builder(
-                  itemCount: docs.length,
-                  itemBuilder: (context, index) {
-                    final doc = docs[index];
-                    final data = doc.data() as Map<String, dynamic>;
-                    final double preco = (data['preco'] ?? 0.0).toDouble();
-                    final int quantidade = (data['quantidade'] ?? 1).toInt();
+                          // Chaves perfeitamente alinhadas com o CardapioScreen!
+                          final String idProduto = item['id'] ?? doc.id;
+                          final String nome = item['nome'] ?? 'Produto sem nome';
+                          final double preco = (item['preco'] ?? 0.0).toDouble();
+                          final int quantidade = (item['quantidade'] ?? 1).toInt();
 
-                    return ListTile(
-                      title: Text(data['nome'] ?? 'Sem nome'),
-                      subtitle: Text('R\$ ${preco.toStringAsFixed(2)} cada'),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
+                          return Card(
+                            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            child: ListTile(
+                              title: Text(nome, style: const TextStyle(fontWeight: FontWeight.bold)),
+                              subtitle: Text('R\$ ${preco.toStringAsFixed(2)} x $quantidade'),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'R\$ ${(preco * quantidade).toStringAsFixed(2)}',
+                                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                                    onPressed: () async {
+                                      // Permite remover direto do carrinho se o cliente quiser
+                                      await _firestore
+                                          .collection('usuarios')
+                                          .doc(uid)
+                                          .collection('carrinho')
+                                          .doc(idProduto)
+                                          .delete();
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    // Painel de Fechamento de Valor Geral (HU03)
+                    Container(
+                      padding: const EdgeInsets.all(16.0),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        boxShadow: [
+                          BoxShadow(color: Colors.grey.withOpacity(0.2), spreadRadius: 3, blurRadius: 5)
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          // Botão de Remover / Decrementar (-)
-                          IconButton(
-                            icon: const Icon(
-                              Icons.remove_circle_outline,
-                              color: Colors.red,
-                            ),
-                            onPressed: () =>
-                                _atualizarQuantidade(doc.id, quantidade - 1),
-                          ),
-
-                          // Exibição da quantidade atualizada
+                          const Text('TOTAL:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                           Text(
-                            '$quantidade',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-
-                          // Botão de Adicionar / Incrementar (+)
-                          IconButton(
-                            icon: const Icon(
-                              Icons.add_circle_outline,
-                              color: Colors.green,
-                            ),
-                            onPressed: () =>
-                                _atualizarQuantidade(doc.id, quantidade + 1),
-                          ),
-                          const SizedBox(width: 8),
-
-                          // Valor total do item (Preço * Quantidade)
-                          Text(
-                            'R\$ ${(preco * quantidade).toStringAsFixed(2)}',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
+                            'R\$ ${totalCarrinho.toStringAsFixed(2)}',
+                            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.green),
                           ),
                         ],
                       ),
-                    );
-                  },
-                ),
-              ),
-
-              // Painel de finalização fixado na parte de baixo
-              Container(
-                padding: const EdgeInsets.all(16.0),
-                decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  border: Border(top: BorderSide(color: Colors.grey[300]!)),
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'TOTAL:',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          'R\$ ${totalGeral.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.amber[800],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.amber[700],
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size(double.infinity, 50),
-                      ),
-                      onPressed: () {
-                        // Coleta a lista atual de itens mapeados para injetar na tela de pagamento
-                        List<Map<String, dynamic>> itensDoPedido = docs.map((
-                          doc,
-                        ) {
-                          final data = doc.data() as Map<String, dynamic>;
-                          return {
-                            'id_produto': doc.id,
-                            'nome': data['nome'],
-                            'preco': data['preco'],
-                            'quantidade': data['quantidade'],
-                          };
-                        }).toList();
-
-                        // Navega empurrando o valor calculado dinamicamente e a lista estruturada
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => PagamentoScreen(
-                              valorTotal: totalGeral,
-                              itensPedido: itensDoPedido,
-                            ),
-                          ),
-                        );
-                      },
-                      child: const Text(
-                        'AVANÇAR PARA O PAGAMENTO',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
                     ),
                   ],
-                ),
-              ),
-            ],
-          );
-        },
-      ),
+                );
+              },
+            ),
     );
   }
 }

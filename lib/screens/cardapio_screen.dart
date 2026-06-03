@@ -73,7 +73,7 @@ class _CardapioScreenState extends State<CardapioScreen> {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const CarrinhoScreen()),
+                  MaterialPageRoute(builder: (context) => CarrinhoScreen()),
                 );
               },
             ),
